@@ -21,9 +21,9 @@ std::vector<std::vector<uint64_t>> total_res;
 uint64_t reserved;
 std::vector<uint64_t> reserved_slave;
 
-std::vector<uint64_t> comps = {6, 2};
+std::vector<uint64_t> comps = {4, 2};
 //std::vector<std::string> ips = {"192.168.0.2", "self_"};
-std::vector<std::string> ips = {"127.0.0.1", "192.168.0.2"};
+std::vector<std::string> ips = {"127.0.0.1", "127.0.0.1"};
 std::vector<std::string> ports = {"52524", "52525"};
 
 class Timer
@@ -229,6 +229,7 @@ int main() {
         // }
 
         uint64_t total_size = 0;
+        total_res.push_back(res);
         for(auto& i : total_res){total_size += i.size();}
         std::cout << '\n' << total_size << '\n';
 

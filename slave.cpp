@@ -7,7 +7,7 @@
 #include <random>
 #include <boost/asio.hpp>
 
-#define CORES_SLAVE 6
+#define CORES_SLAVE 4
 
 using boost::asio::ip::tcp;
 

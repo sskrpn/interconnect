@@ -141,8 +141,8 @@ int main(){
     std::cout << "CONNECTED TO SERVAK" << '\n';
 
     recieve_packet(std::move(socket));
-    std::string master_ip = "192.168.0.3";
-    //std::string master_ip = "127.0.0.1";
+    //std::string master_ip = "192.168.0.3";
+    std::string master_ip = "127.0.0.1";
     boost::asio::io_context io_context_send;
     send_result(io_context_send, master_ip);
 
