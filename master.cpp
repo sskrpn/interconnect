@@ -10,7 +10,7 @@
 #include <boost/asio.hpp>
 
 #define SELF_ 0xFF
-#define SELF_CORES 5
+#define SELF_CORES 11
 
 using boost::asio::ip::tcp;
 
@@ -21,10 +21,10 @@ std::vector<std::vector<uint64_t>> total_res;
 uint64_t reserved;
 std::vector<uint64_t> reserved_slave;
 
-std::vector<uint64_t> comps = {4, 2};
+std::vector<uint64_t> comps = {12, 16};
 //std::vector<std::string> ips = {"192.168.0.2", "self_"};
-std::vector<std::string> ips = {"127.0.0.1", "127.0.0.1"};
-std::vector<std::string> ports = {"52524", "52525"};
+std::vector<std::string> ips = {"192.168.0.6", "192.168.0.5"};
+std::vector<std::string> ports = {"52527", "52525"};
 
 class Timer
 {
@@ -55,8 +55,10 @@ int calculate_partials(uint64_t start, uint64_t end, uint64_t R){
     for(size_t i = start; i < end; i++){
         iter++;
         uint64_t sumR = 0;
+        uint64_t rnd;
         for(size_t j = 0; j < R; j++){
-            sumR += i + 1;
+            rnd = static_cast<uint64_t>(generator() % 3 + 1);
+            sumR += (rnd * rnd);
         }
         m.lock();
         res.push_back(sumR);

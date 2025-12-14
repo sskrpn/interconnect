@@ -107,7 +107,7 @@ int send_result(boost::asio::io_context& io_context, std::string& master_ip){
     try {
     tcp::socket socket(io_context);
     tcp::resolver resolver(io_context);
-    tcp::endpoint endpoint(boost::asio::ip::make_address("127.0.0.1"), 52526);
+    tcp::endpoint endpoint(boost::asio::ip::make_address(master_ip), 52526);
 
     //std::cout << "CONNECTING BACK TO MASTER to " << master_ip << '\n';
     //boost::asio::connect(socket, resolver.resolve(master_ip, std::to_string(52526)));
@@ -142,8 +142,8 @@ int main(){
     std::cout << "CONNECTED TO SERVAK" << '\n';
 
     recieve_packet(std::move(socket));
-    //std::string master_ip = "192.168.0.3";
-    std::string master_ip = "127.0.0.1";
+    std::string master_ip = "192.168.0.3";
+    //std::string master_ip = "127.0.0.1";
     boost::asio::io_context io_context_send;
     send_result(io_context_send, master_ip);
 
