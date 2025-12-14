@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdint>
 #include <string>
+#include <chrono>
 #include <vector>
 #include <thread>
 #include <cmath>
@@ -16,7 +17,34 @@ using boost::asio::ip::tcp;
 
 std::mutex m;
 std::vector<uint64_t> res;
+std::vector<std::vector<uint64_t>> total_res;
 uint64_t reserved;
+std::vector<uint64_t> reserved_slave;
+
+std::vector<uint64_t> comps = {6, 2};
+//std::vector<std::string> ips = {"192.168.0.2", "self_"};
+std::vector<std::string> ips = {"127.0.0.1", "192.168.0.2"};
+std::vector<std::string> ports = {"52524", "52525"};
+
+class Timer
+{
+private:
+	using Clock = std::chrono::steady_clock;
+	using Second = std::chrono::duration<double, std::ratio<1> >;
+
+	std::chrono::time_point<Clock> m_beg{ Clock::now() };
+
+public:
+	void reset()
+	{
+		m_beg = Clock::now();
+	}
+
+	double elapsed() const
+	{
+		return std::chrono::duration_cast<Second>(Clock::now() - m_beg).count();
+	}
+};
 
 int calculate_partials(uint64_t start, uint64_t end, uint64_t R){
     std::cout << "TASK STARTED WITH: " << 
@@ -63,28 +91,33 @@ int send_task(tcp::socket& socket, uint64_t start, uint64_t end, uint64_t M){
     return 0;
 }
 
-std::vector<uint64_t>  recieve_result(boost::asio::io_context& io_context, uint64_t M){
+void recieve_result(boost::asio::io_context& io_context, uint64_t M){
     try {
+        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 52526));
+        acceptor.set_option(tcp::acceptor::reuse_address(true));
 
-        while (true){
-            tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 52526));
+        for(size_t c = 0; c < comps.size(); c++){
+            
             tcp::socket socket(io_context);
+            
 
             acceptor.accept(socket);
 
             std::cout << "CONNECTED TO SLAVE" << '\n';
 
-            std::vector<uint64_t> res1(reserved);
+            std::vector<uint64_t> slave_res(reserved_slave[c]);
             boost::system::error_code error;
 
-            size_t n = boost::asio::read(socket, boost::asio::buffer(res1),
-                                        boost::asio::transfer_exactly(reserved * 8), error);
-            
+            size_t n = boost::asio::read(socket, boost::asio::buffer(slave_res),
+                                        boost::asio::transfer_exactly(reserved_slave[c] * 8), error);
+            std::cout << "ACCEPTED " << slave_res.size() << '\n';
+            total_res.push_back(slave_res);
 
             if (error == boost::asio::error::eof) break;
             else if (error) throw boost::system::system_error(error);
 
-        return res1;
+            socket.shutdown(tcp::socket::shutdown_both);
+            socket.close();
         }
 
     } catch (std::exception& e) {
@@ -105,7 +138,7 @@ int distribute_tasks(std::vector<uint64_t>& threads, std::vector<std::string>& i
             tcp::resolver resolver(io_context);
 
             std::cout << "Connecting to slave at " << ip << '\n';
-            boost::asio::connect(socket, resolver.resolve(ip, std::to_string(52525)));
+            boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
 
             uint64_t startR, endR;
             for(size_t t = 0; t < threads[c]; t++){
@@ -129,14 +162,15 @@ int distribute_tasks(std::vector<uint64_t>& threads, std::vector<std::string>& i
 
 int main() {
     try{
-        std::vector<uint64_t> comps = {6};
-        //std::vector<std::string> ips = {"192.168.0.2", "self_"};
-        std::vector<std::string> ips = {"127.0.0.1"};
         uint64_t M;
+
+        
 
         std::cout << "MATRIX DIMENSIONS: ";
         std::cin >> M;
-
+        
+        Timer t;
+        
         res.clear();
 
         //----------TASKS------------------
@@ -155,6 +189,10 @@ int main() {
 
         reserved = M - (chunk_size * SELF_CORES + remainder_);
         std::cout << reserved << '\n';
+        for(auto& core : comps){
+            reserved_slave.push_back(chunk_size * core);
+            std::cout << chunk_size * core << '\n';
+        }
 
         for(size_t t = 0; t < SELF_CORES; t++){
             uint64_t startR = (t + leap) * chunk_size;
@@ -172,22 +210,30 @@ int main() {
         tcp::socket socket(io_context);
         tcp::resolver resolver(io_context);
 
-        std::thread control([&comps, &ips, &M, &io_context, &chunk_size](){
+        std::thread control([&M, &io_context, &chunk_size](){
                             distribute_tasks(comps, ips, M, io_context, chunk_size);
         });
 
         control.join();
-        std::vector<uint64_t> res1 = recieve_result(io_context, M);
+        recieve_result(io_context, M);
 
         for(auto& t : master_threads){
             t.join();
         }
 
-        res.insert(res.end(), res1.begin(), res1.end());
-        for(auto& i : res){
-            std::cout << i << ' ';
-        }
-        std::cout << '\n' << res.size() << '\n';
+        // total_res.push_back(res);
+        // for(auto& i : total_res){
+        //     for(auto& j : i){
+        //         std::cout << j << ' ';
+        //     }
+        // }
+
+        uint64_t total_size = 0;
+        for(auto& i : total_res){total_size += i.size();}
+        std::cout << '\n' << total_size << '\n';
+
+        double timestamp = t.elapsed();
+        std::cout << timestamp << " seconds have passed from cin to cout result" << '\n';
 
     } catch (std::exception& e){
         std::cerr << "EXCEPTION: " << e.what() << '\n';
