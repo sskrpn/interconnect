@@ -7,23 +7,27 @@
 #include <cmath>
 #include <mutex>
 #include <random>
+#include <unordered_map>
 #include <boost/asio.hpp>
 
 #define SELF_ 0xFF
 #define SELF_CORES 11
+#define SERVER_PORT 52524
+#define SLAVE_PORT 52525
 
 using boost::asio::ip::tcp;
 
+const uint64_t CHUNK_DIVISION = 10000;
+const uint64_t EXPECTED_COMPS = 3;
+uint64_t chunks_left = CHUNK_DIVISION;
 
 std::mutex m;
 std::vector<uint64_t> res;
 std::vector<std::vector<uint64_t>> total_res;
 uint64_t reserved;
-std::vector<uint64_t> reserved_slave;
-
-std::vector<uint64_t> comps = {8, 16, 12};
-std::vector<std::string> ips = {"192.168.0.4", "192.168.0.5", "192.168.0.6"};
-std::vector<std::string> ports = {"52524", "52525", "52525"};
+std::unordered_map<std::string, uint64_t> reserved_slave;
+std::unordered_map<std::string, uint64_t> comps;
+std::vector<std::string> ips_previously_connected;
 
 class Timer
 {
@@ -43,6 +47,102 @@ public:
 	{
 		return std::chrono::duration_cast<Second>(Clock::now() - m_beg).count();
 	}
+};
+
+class TCP_Connection : public std::enable_shared_from_this<TCP_Connection>{
+public:
+    typedef std::shared_ptr<TCP_Connection> pointer;
+
+    static pointer pointer_create(boost::asio::io_context& io_context){
+        return pointer(new TCP_Connection(io_context));
+    }
+
+    void start(){
+        std::string ip_connected = socket().remote_endpoint().address().to_string();
+
+        auto it = std::find(ips_previously_connected.begin(),
+                                    ips_previously_connected.end(),
+                                        ip_connected);
+
+        bool first = (it != ips_previously_connected.end());
+
+        if(first){
+            ips_previously_connected.push_back(ip_connected);
+            read_cores(ip_connected);
+        } else {
+            read_result(ip_connected);
+        }
+
+        boost::asio::async_write(socket_, boost::asio::buffer(message_),
+            std::bind(&TCP_Connection::handle_write, shared_from_this()));
+    }
+
+    void read_cores(std::string& ip){
+        std::string cores_str;
+        boost::asio::read_until(socket_, boost::asio::dynamic_buffer(cores_str), "\n");
+        comps[ip] = static_cast<uint64_t>(stoi(cores_str));
+
+        std::cout << "CORES READ" << '\n';
+    }
+
+    void read_result(std::string& ip){
+        std::vector<uint64_t> slave_res(reserved_slave[ip]);
+        boost::system::error_code error;
+
+        size_t n = boost::asio::read(socket(), boost::asio::buffer(slave_res),
+                                        boost::asio::transfer_exactly(reserved_slave[ip] * 8), error);
+        std::cout << "ACCEPTED " << slave_res.size() << '\n';
+        total_res.push_back(slave_res);
+
+        if (error == boost::asio::error::eof){}
+        else if (error) throw boost::system::system_error(error);
+    }
+
+    tcp::socket& socket(){ return socket_; }
+private:
+    tcp::socket socket_;
+    std::string message_;
+
+    TCP_Connection(boost::asio::io_context& io_context)
+    : socket_(io_context){}
+
+    void handle_write(){
+        
+    }
+};
+
+class TCP_Server{
+public:
+    TCP_Server(boost::asio::io_context& io_context)
+    : io_context_(io_context),
+      acceptor_(io_context, tcp::endpoint(tcp::v4(), SERVER_PORT)){
+
+        start_accept();
+      }
+
+private:
+      boost::asio::io_context& io_context_;
+      tcp::acceptor acceptor_;
+
+      void start_accept(){
+        TCP_Connection::pointer new_connection = 
+            TCP_Connection::pointer_create(io_context_);
+        
+        acceptor_.async_accept(new_connection->socket(),
+            std::bind(&TCP_Server::handle_accept, this, new_connection,
+                boost::asio::placeholders::error));
+      }
+
+      void handle_accept(TCP_Connection::pointer new_connection,
+        const boost::system::error_code& ec){
+
+        if(!ec){
+            std::cout << "CONNECTED TO SLAVE" << '\n';
+            new_connection->start();
+        }
+
+        start_accept();
+    }
 };
 
 int calculate_partials(uint64_t start, uint64_t end, uint64_t R){
@@ -159,6 +259,37 @@ int distribute_tasks(std::vector<uint64_t>& threads, std::vector<std::string>& i
     return 0;
 }
 
+int distribute(std::vector<uint64_t>& threads, std::vector<std::string>& ips, uint64_t& M,
+                     boost::asio::io_context& io_context, uint64_t& chunk_size){
+    try{
+        uint64_t leap = 0;
+        tcp::socket socket(io_context);
+        tcp::resolver resolver(io_context);
+
+        for(size_t c = 0; c < threads.size(); c++){
+            std::vector<std::thread> slave_threads;
+            std::string ip = ips[c];
+
+            std::cout << "Connecting to slave at " << ip << '\n';
+            boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
+
+            uint64_t startR, endR;
+            for(size_t t = 0; t < threads[c]; t++){
+                uint64_t startR = (t + leap) * chunk_size;
+                uint64_t endR   = (t + 1 + leap) * chunk_size ;
+                send_task(socket, startR, endR, M);
+                }
+
+            leap += threads[c];
+            socket.close();
+
+        }
+
+    } catch (std::exception& e){
+        std::cerr << "EXCEPTION FROM SLAVE: " << e.what() << '\n';
+    }
+}
+
 
 
 int main() {
@@ -206,6 +337,24 @@ int main() {
                 });
         }
         //----------TASKS-------------------
+        //----------DISTRIBUTION CONTROL-----
+        uint64_t total_threads = SELF_CORES;
+        for(size_t c = 0; c < comps.size(); c++){
+            total_threads += comps[c];
+        }
+
+        uint64_t chunk_size = M / CHUNK_DIVISION;
+        uint64_t remainder_ = M / CHUNK_DIVISION;
+
+        boost::asio::io_context io_context;
+        tcp::socket socket(io_context);
+        auto socket_ptr = std::make_unique<tcp::socket>(socket);
+
+        std::thread control([&M, &io_context, &chunk_size](){
+                            distribute(comps, ips, M, io_context, chunk_size);
+        });
+
+        //----------DISTRIBUTION CONTROL-----
 
         boost::asio::io_context io_context;
         tcp::socket socket(io_context);
