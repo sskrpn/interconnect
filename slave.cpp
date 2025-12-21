@@ -9,7 +9,7 @@
 using boost::asio::ip::tcp;
 
 const uint64_t SERVER_PORT = 52524;
-const std::string CORES_SELF = "12\n";
+const std::string CORES_SELF = "4\n";
 
 std::mutex m;
 std::vector<uint64_t> res;
@@ -40,6 +40,7 @@ public:
         boost::asio::write(socket_, boost::asio::buffer(res), ec);
         std::cout << res.size() << '\n';
         std::cout << "WRITE DONE" << '\n';
+        res.clear();
         read();
     }
 
@@ -71,7 +72,7 @@ public:
             }
         }
     
-        for (size_t i = 0; i < 12; i++) {
+        for (size_t i = 0; i < 4; i++) {
             std::vector<uint64_t> individual_task(tasks.end() - 3, tasks.end());
             tasks_to_send.push_back(individual_task);
             for (size_t p = 0; p < 3; p++) {
@@ -162,7 +163,7 @@ int calculate_partials(uint64_t start, uint64_t end, uint64_t R) {
 
 int manage_threads(std::vector<std::vector<uint64_t>>& tasks) {
     std::vector<std::thread> threads;
-    for (size_t t = 0; t < 12; t++) {
+    for (size_t t = 0; t < 4; t++) {
         threads.emplace_back(calculate_partials, std::ref(tasks[t][0]),
             std::ref(tasks[t][1]), std::ref(tasks[t][2]));
     }
