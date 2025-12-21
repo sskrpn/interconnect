@@ -17,11 +17,15 @@
 
 using boost::asio::ip::tcp;
 
-const uint64_t CHUNK_DIVISION = 10000;
+const uint64_t CHUNK_DIVISION = 1000;
 const uint64_t EXPECTED_COMPS = 3;
 uint64_t chunks_left = CHUNK_DIVISION;
 
+uint64_t leap = 0;
+uint64_t chunk_size = 0;
+
 std::mutex m;
+uint64_t M;
 std::vector<uint64_t> res;
 std::vector<std::vector<uint64_t>> total_res;
 uint64_t reserved;
@@ -59,55 +63,84 @@ public:
 
     void start(){
         std::string ip_connected = socket().remote_endpoint().address().to_string();
+        std::cout << ip_connected << '\n';
 
         auto it = std::find(ips_previously_connected.begin(),
                                     ips_previously_connected.end(),
                                         ip_connected);
 
-        bool first = (it != ips_previously_connected.end());
+        bool first = (it == ips_previously_connected.end());
 
         if(first){
             ips_previously_connected.push_back(ip_connected);
+            std::cout << "I SEE " << ip_connected << " FIRST TIME!" << '\n';
             read_cores(ip_connected);
         } else {
+            std::cout << "I SEE " << ip_connected << " NOT THE FIRST TIME!" << '\n';
             read_result(ip_connected);
         }
-
+        message_ += "\n";
         boost::asio::async_write(socket_, boost::asio::buffer(message_),
             std::bind(&TCP_Connection::handle_write, shared_from_this()));
+
+        std::cout << "WROTE: " << message_ << '\n';
     }
 
     void read_cores(std::string& ip){
         std::string cores_str;
         boost::asio::read_until(socket_, boost::asio::dynamic_buffer(cores_str), "\n");
         comps[ip] = static_cast<uint64_t>(stoi(cores_str));
+        cores_    = static_cast<uint64_t>(stoi(cores_str));
 
-        std::cout << "CORES READ" << '\n';
+        std::cout << "CORES READ ";
+        std::cout << comps[ip] << '\n';
+
+        for(size_t th = 0; th < cores_; th++){
+            uint64_t startR = (th + leap) * chunk_size;
+            uint64_t endR   = (th + leap + 1) * chunk_size;
+            message_ += std::to_string(startR) + ' ' + 
+                        std::to_string(endR) + ' ' +
+                        std::to_string(M) + '!';
+        }
+        message_ += '\n';
+        leap += cores_;
     }
 
     void read_result(std::string& ip){
-        std::vector<uint64_t> slave_res(reserved_slave[ip]);
+        std::vector<uint64_t> slave_res(12000);
         boost::system::error_code error;
 
         size_t n = boost::asio::read(socket(), boost::asio::buffer(slave_res),
-                                        boost::asio::transfer_exactly(reserved_slave[ip] * 8), error);
+                                        boost::asio::transfer_exactly(12000 * 8), error);
         std::cout << "ACCEPTED " << slave_res.size() << '\n';
         total_res.push_back(slave_res);
+        for(auto& i : slave_res){
+            std::cout << i << ' ';
+        }
 
-        if (error == boost::asio::error::eof){}
-        else if (error) throw boost::system::system_error(error);
+        for(size_t th = 0; th < comps[ip]; th++){
+            uint64_t startR = (th + leap) * chunk_size;
+            uint64_t endR   = (th + leap + 1) * chunk_size;
+            message_ += std::to_string(startR) + ' ' + 
+                        std::to_string(endR) + ' ' +
+                        std::to_string(M) + '!';
+        }
+        message_ += '\n';
+        leap += comps[ip];
     }
 
     tcp::socket& socket(){ return socket_; }
 private:
     tcp::socket socket_;
     std::string message_;
+    uint64_t    cores_;
 
     TCP_Connection(boost::asio::io_context& io_context)
     : socket_(io_context){}
 
     void handle_write(){
-        
+        uint64_t chunk_size = M / CHUNK_DIVISION;
+        uint64_t remainder_ = M % CHUNK_DIVISION;
     }
 };
 
@@ -127,10 +160,12 @@ private:
       void start_accept(){
         TCP_Connection::pointer new_connection = 
             TCP_Connection::pointer_create(io_context_);
-        
+
+        boost::system::error_code ec;
+        std::cout << "WAITING FOR CONNECTION..." << '\n';
         acceptor_.async_accept(new_connection->socket(),
             std::bind(&TCP_Server::handle_accept, this, new_connection,
-                boost::asio::placeholders::error));
+                ec));
       }
 
       void handle_accept(TCP_Connection::pointer new_connection,
@@ -145,29 +180,29 @@ private:
     }
 };
 
-int calculate_partials(uint64_t start, uint64_t end, uint64_t R){
-    std::cout << "TASK STARTED WITH: " << 
-                start << ' ' << end << ' ' << R << '\n';
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-	std::mt19937 generator(seed);
-    uint64_t iter = 0;
-    for(size_t i = start; i < end; i++){
-        iter++;
-        uint64_t sumR = 0;
-        uint64_t rnd;
-        for(size_t j = 0; j < R; j++){
-            rnd = static_cast<uint64_t>(generator() % 3 + 1);
-            sumR += (rnd * rnd);
-        }
-        m.lock();
-        res.push_back(sumR);
-        m.unlock();
+// int calculate_partials(uint64_t start, uint64_t end, uint64_t R){
+//     std::cout << "TASK STARTED WITH: " << 
+//                 start << ' ' << end << ' ' << R << '\n';
+//     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+// 	std::mt19937 generator(seed);
+//     uint64_t iter = 0;
+//     for(size_t i = start; i < end; i++){
+//         iter++;
+//         uint64_t sumR = 0;
+//         uint64_t rnd;
+//         for(size_t j = 0; j < R; j++){
+//             rnd = static_cast<uint64_t>(generator() % 3 + 1);
+//             sumR += (rnd * rnd);
+//         }
+//         m.lock();
+//         res.push_back(sumR);
+//         m.unlock();
 
-    }
-    std::cout << "THREAD DONE" << '\n';
-    std::cout << iter << '\n';
-    return 0;
-}
+//     }
+//     std::cout << "THREAD DONE" << '\n';
+//     std::cout << iter << '\n';
+//     return 0;
+// }
 
 int send_task(tcp::socket& socket, uint64_t start, uint64_t end, uint64_t M){
     try {
@@ -192,203 +227,240 @@ int send_task(tcp::socket& socket, uint64_t start, uint64_t end, uint64_t M){
     return 0;
 }
 
-void recieve_result(boost::asio::io_context& io_context, uint64_t M){
-    try {
-        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 52526));
-        acceptor.set_option(tcp::acceptor::reuse_address(true));
+// void recieve_result(boost::asio::io_context& io_context, uint64_t M){
+//     try {
+//         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 52526));
+//         acceptor.set_option(tcp::acceptor::reuse_address(true));
 
-        for(size_t c = 0; c < comps.size(); c++){
+//         for(size_t c = 0; c < comps.size(); c++){
             
-            tcp::socket socket(io_context);
+//             tcp::socket socket(io_context);
             
 
-            acceptor.accept(socket);
+//             acceptor.accept(socket);
 
-            std::cout << "CONNECTED TO SLAVE" << '\n';
+//             std::cout << "CONNECTED TO SLAVE" << '\n';
 
-            std::vector<uint64_t> slave_res(reserved_slave[c]);
-            boost::system::error_code error;
+//             std::vector<uint64_t> slave_res(reserved_slave[c]);
+//             boost::system::error_code error;
 
-            size_t n = boost::asio::read(socket, boost::asio::buffer(slave_res),
-                                        boost::asio::transfer_exactly(reserved_slave[c] * 8), error);
-            std::cout << "ACCEPTED " << slave_res.size() << '\n';
-            total_res.push_back(slave_res);
+//             size_t n = boost::asio::read(socket, boost::asio::buffer(slave_res),
+//                                         boost::asio::transfer_exactly(reserved_slave[c] * 8), error);
+//             std::cout << "ACCEPTED " << slave_res.size() << '\n';
+//             total_res.push_back(slave_res);
 
-            if (error == boost::asio::error::eof) break;
-            else if (error) throw boost::system::system_error(error);
+//             if (error == boost::asio::error::eof) break;
+//             else if (error) throw boost::system::system_error(error);
 
-            socket.shutdown(tcp::socket::shutdown_both);
-            socket.close();
-        }
+//             socket.shutdown(tcp::socket::shutdown_both);
+//             socket.close();
+//         }
 
-    } catch (std::exception& e) {
-        std::cerr << e.what() << '\n';
+//     } catch (std::exception& e) {
+//         std::cerr << e.what() << '\n';
+//     }
+// }
+
+// int distribute_tasks(std::vector<uint64_t>& threads, std::vector<std::string>& ips, uint64_t& M,
+//                      boost::asio::io_context& io_context, uint64_t& chunk_size){
+//     try{
+//         uint64_t leap = 0;
+
+//         for(size_t c = 0; c < threads.size(); c++){
+//             std::vector<std::thread> slave_threads;
+//             std::string ip = ips[c];
+
+//             tcp::socket socket(io_context);
+//             tcp::resolver resolver(io_context);
+
+//             std::cout << "Connecting to slave at " << ip << '\n';
+//             boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
+
+//             uint64_t startR, endR;
+//             for(size_t t = 0; t < threads[c]; t++){
+//                 uint64_t startR = (t + leap) * chunk_size;
+//                 uint64_t endR   = (t + 1 + leap) * chunk_size ;
+//                 send_task(socket, startR, endR, M);
+//                 }
+
+//             leap += threads[c];
+//             socket.close();
+
+//         }
+//     } catch (std::exception& e) {
+//             std::cerr << "EXCEPTION FROM SLAVE: " << e.what() << '\n';
+//     }
+
+//     return 0;
+// }
+
+// int distribute(std::vector<uint64_t>& threads, std::vector<std::string>& ips, uint64_t& M,
+//                      boost::asio::io_context& io_context, uint64_t& chunk_size){
+//     try{
+//         uint64_t leap = 0;
+//         tcp::socket socket(io_context);
+//         tcp::resolver resolver(io_context);
+
+//         for(size_t c = 0; c < threads.size(); c++){
+//             std::vector<std::thread> slave_threads;
+//             std::string ip = ips[c];
+
+//             std::cout << "Connecting to slave at " << ip << '\n';
+//             boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
+
+//             uint64_t startR, endR;
+//             for(size_t t = 0; t < threads[c]; t++){
+//                 uint64_t startR = (t + leap) * chunk_size;
+//                 uint64_t endR   = (t + 1 + leap) * chunk_size ;
+//                 send_task(socket, startR, endR, M);
+//                 }
+
+//             leap += threads[c];
+//             socket.close();
+
+//         }
+
+//     } catch (std::exception& e){
+//         std::cerr << "EXCEPTION FROM SLAVE: " << e.what() << '\n';
+//     }
+// }
+
+
+
+// int main() {
+//     try{
+//         uint64_t M;
+
+        
+
+//         std::cout << "MATRIX DIMENSIONS: ";
+//         std::cin >> M;
+        
+//         Timer t;
+        
+//         res.clear();
+
+//         //----------TASKS------------------
+
+//         uint64_t total_threads = SELF_CORES;
+//         for(size_t c = 0; c < comps.size(); c++){
+//             total_threads += comps[c];
+//         }
+
+//         uint64_t chunk_size = M / total_threads;
+//         uint64_t remainder_ = M % total_threads;
+//         std::cout << total_threads << ' ' << chunk_size << ' ' << remainder_ << '\n';
+
+//         std::vector<std::thread> master_threads;
+//         std::uint64_t leap = total_threads - SELF_CORES;
+
+//         reserved = M - (chunk_size * SELF_CORES + remainder_);
+//         std::cout << reserved << '\n';
+//         for(auto& core : comps){
+//             reserved_slave.push_back(chunk_size * core);
+//             std::cout << chunk_size * core << '\n';
+//         }
+
+//         for(size_t t = 0; t < SELF_CORES; t++){
+//             uint64_t startR = (t + leap) * chunk_size;
+//             uint64_t endR   = (t == SELF_CORES - 1) ? 
+//                               (t + 1 + leap) * chunk_size + remainder_ :
+//                               (t + 1 + leap) * chunk_size;
+
+//             master_threads.emplace_back([startR, endR, M](){
+//                     calculate_partials(startR, endR, M);
+//                 });
+//         }
+//         //----------TASKS-------------------
+//         //----------DISTRIBUTION CONTROL-----
+        // uint64_t total_threads = SELF_CORES;
+        // for(size_t c = 0; c < comps.size(); c++){
+        //     total_threads += comps[c];
+        // }
+
+        // uint64_t chunk_size = M / CHUNK_DIVISION;
+        // uint64_t remainder_ = M / CHUNK_DIVISION;
+
+//         boost::asio::io_context io_context;
+//         tcp::socket socket(io_context);
+//         auto socket_ptr = std::make_unique<tcp::socket>(socket);
+
+//         std::thread control([&M, &io_context, &chunk_size](){
+//                             distribute(comps, ips, M, io_context, chunk_size);
+//         });
+
+//         //----------DISTRIBUTION CONTROL-----
+
+//         boost::asio::io_context io_context;
+//         tcp::socket socket(io_context);
+//         tcp::resolver resolver(io_context);
+
+//         std::thread control([&M, &io_context, &chunk_size](){
+//                             distribute_tasks(comps, ips, M, io_context, chunk_size);
+//         });
+
+//         control.join();
+//         recieve_result(io_context, M);
+
+//         for(auto& t : master_threads){
+//             t.join();
+//         }
+
+//         // total_res.push_back(res);
+//         // for(auto& i : total_res){
+//         //     for(auto& j : i){
+//         //         std::cout << j << ' ';
+//         //     }
+//         // }
+
+//         uint64_t total_size = 0;
+//         total_res.push_back(res);
+//         for(auto& i : total_res){total_size += i.size();}
+//         std::cout << '\n' << total_size << '\n';
+
+//         double timestamp = t.elapsed();
+//         std::cout << timestamp << " seconds have passed from cin to cout result" << '\n';
+
+//     } catch (std::exception& e){
+//         std::cerr << "EXCEPTION: " << e.what() << '\n';
+//     }
+
+//     return 0;
+// }
+
+void launch(){
+    try{boost::asio::io_context io_context;
+    TCP_Server server(io_context);
+    io_context.run();}catch (std::exception& e){
+        std::cerr << "EXCEPTION " << e.what() << '\n';
     }
 }
 
-int distribute_tasks(std::vector<uint64_t>& threads, std::vector<std::string>& ips, uint64_t& M,
-                     boost::asio::io_context& io_context, uint64_t& chunk_size){
-    try{
-        uint64_t leap = 0;
+// void distribute_tasks(uint64_t& M){
+//     chunk_size = M / CHUNK_DIVISION;
+//     uint64_t remainder_ = M % CHUNK_DIVISION;
+    
 
-        for(size_t c = 0; c < threads.size(); c++){
-            std::vector<std::thread> slave_threads;
-            std::string ip = ips[c];
-
-            tcp::socket socket(io_context);
-            tcp::resolver resolver(io_context);
-
-            std::cout << "Connecting to slave at " << ip << '\n';
-            boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
-
-            uint64_t startR, endR;
-            for(size_t t = 0; t < threads[c]; t++){
-                uint64_t startR = (t + leap) * chunk_size;
-                uint64_t endR   = (t + 1 + leap) * chunk_size ;
-                send_task(socket, startR, endR, M);
-                }
-
-            leap += threads[c];
-            socket.close();
-
-        }
-    } catch (std::exception& e) {
-            std::cerr << "EXCEPTION FROM SLAVE: " << e.what() << '\n';
-    }
-
-    return 0;
-}
-
-int distribute(std::vector<uint64_t>& threads, std::vector<std::string>& ips, uint64_t& M,
-                     boost::asio::io_context& io_context, uint64_t& chunk_size){
-    try{
-        uint64_t leap = 0;
-        tcp::socket socket(io_context);
-        tcp::resolver resolver(io_context);
-
-        for(size_t c = 0; c < threads.size(); c++){
-            std::vector<std::thread> slave_threads;
-            std::string ip = ips[c];
-
-            std::cout << "Connecting to slave at " << ip << '\n';
-            boost::asio::connect(socket, resolver.resolve(ip, ports[c]));
-
-            uint64_t startR, endR;
-            for(size_t t = 0; t < threads[c]; t++){
-                uint64_t startR = (t + leap) * chunk_size;
-                uint64_t endR   = (t + 1 + leap) * chunk_size ;
-                send_task(socket, startR, endR, M);
-                }
-
-            leap += threads[c];
-            socket.close();
-
-        }
-
-    } catch (std::exception& e){
-        std::cerr << "EXCEPTION FROM SLAVE: " << e.what() << '\n';
-    }
-}
-
+//     for(auto& [ip, cores] : comps){
+//         for(size_t th = 0; th < cores; th++){
+//             uint64_t startR = (th + leap)     * chunk_size * CHUNKS_COEFFICIENT;
+//             uint64_t endR   = (th + leap + 1) * chunk_size * CHUNKS_COEFFICIENT;
+//         }
+//         leap += cores;
+//     }
+// }
 
 
 int main() {
-    try{
-        uint64_t M;
+    std::cout << "MATRIX DIMENSIONS: ";
+    std::cin >> M;
+    chunk_size = M / CHUNK_DIVISION;
 
-        
+    std::thread control(launch);
 
-        std::cout << "MATRIX DIMENSIONS: ";
-        std::cin >> M;
-        
-        Timer t;
-        
-        res.clear();
-
-        //----------TASKS------------------
-
-        uint64_t total_threads = SELF_CORES;
-        for(size_t c = 0; c < comps.size(); c++){
-            total_threads += comps[c];
-        }
-
-        uint64_t chunk_size = M / total_threads;
-        uint64_t remainder_ = M % total_threads;
-        std::cout << total_threads << ' ' << chunk_size << ' ' << remainder_ << '\n';
-
-        std::vector<std::thread> master_threads;
-        std::uint64_t leap = total_threads - SELF_CORES;
-
-        reserved = M - (chunk_size * SELF_CORES + remainder_);
-        std::cout << reserved << '\n';
-        for(auto& core : comps){
-            reserved_slave.push_back(chunk_size * core);
-            std::cout << chunk_size * core << '\n';
-        }
-
-        for(size_t t = 0; t < SELF_CORES; t++){
-            uint64_t startR = (t + leap) * chunk_size;
-            uint64_t endR   = (t == SELF_CORES - 1) ? 
-                              (t + 1 + leap) * chunk_size + remainder_ :
-                              (t + 1 + leap) * chunk_size;
-
-            master_threads.emplace_back([startR, endR, M](){
-                    calculate_partials(startR, endR, M);
-                });
-        }
-        //----------TASKS-------------------
-        //----------DISTRIBUTION CONTROL-----
-        uint64_t total_threads = SELF_CORES;
-        for(size_t c = 0; c < comps.size(); c++){
-            total_threads += comps[c];
-        }
-
-        uint64_t chunk_size = M / CHUNK_DIVISION;
-        uint64_t remainder_ = M / CHUNK_DIVISION;
-
-        boost::asio::io_context io_context;
-        tcp::socket socket(io_context);
-        auto socket_ptr = std::make_unique<tcp::socket>(socket);
-
-        std::thread control([&M, &io_context, &chunk_size](){
-                            distribute(comps, ips, M, io_context, chunk_size);
-        });
-
-        //----------DISTRIBUTION CONTROL-----
-
-        boost::asio::io_context io_context;
-        tcp::socket socket(io_context);
-        tcp::resolver resolver(io_context);
-
-        std::thread control([&M, &io_context, &chunk_size](){
-                            distribute_tasks(comps, ips, M, io_context, chunk_size);
-        });
-
-        control.join();
-        recieve_result(io_context, M);
-
-        for(auto& t : master_threads){
-            t.join();
-        }
-
-        // total_res.push_back(res);
-        // for(auto& i : total_res){
-        //     for(auto& j : i){
-        //         std::cout << j << ' ';
-        //     }
-        // }
-
-        uint64_t total_size = 0;
-        total_res.push_back(res);
-        for(auto& i : total_res){total_size += i.size();}
-        std::cout << '\n' << total_size << '\n';
-
-        double timestamp = t.elapsed();
-        std::cout << timestamp << " seconds have passed from cin to cout result" << '\n';
-
-    } catch (std::exception& e){
-        std::cerr << "EXCEPTION: " << e.what() << '\n';
+    uint64_t total_threads = SELF_CORES;
+    for(auto& [ip, cores] : comps){
+        total_threads += cores;
     }
-
-    return 0;
+    control.join();
 }
