@@ -11,8 +11,8 @@ using boost::asio::ip::tcp;
 const uint64_t SERVER_PORT = 52524;
 const std::string SERVER_IP = "127.0.0.1";
 
-const uint64_t CORES_SELF_i = 4;
-const std::string CORES_SELF_s = "4\n";
+const uint64_t CORES_SELF_i = 11;
+const std::string CORES_SELF_s = "11\n";
 
 std::mutex m;
 std::vector<uint64_t> res;
@@ -144,7 +144,7 @@ class TCP_Client {
 
 void manage_threads(std::vector<std::vector<uint64_t>>& tasks) {
     std::vector<std::thread> local_threads;
-    for (size_t t = 0; t < 4; t++) {
+    for (size_t t = 0; t < CORES_SELF_i; t++) {
         local_threads.emplace_back(calculate_partials, std::ref(tasks[t][0]),
                                    std::ref(tasks[t][1]), std::ref(tasks[t][2]));
     }
@@ -161,15 +161,16 @@ void manage_threads(std::vector<std::vector<uint64_t>>& tasks) {
 
 void calculate_partials(uint64_t start, uint64_t end, uint64_t R) {
     std::cout << "TASK STARTED WITH: " << start << ' ' << end << ' ' << R << '\n';
-    // unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    // std::mt19937 generator(seed);
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    std::mt19937 generator(seed);
     uint64_t iter = 0;
     for (size_t i = start; i < end; i++) {
         iter++;
         uint64_t sumR = 0;
+        uint64_t rnd;
         for (size_t j = 0; j < R; j++) {
-            sumR += i + j;
-            // sumR += 1;
+             rnd = static_cast<uint64_t>(generator() % 3 + 1);
+             sumR += (rnd * rnd);
         }
         m.lock();
         res.push_back(sumR);

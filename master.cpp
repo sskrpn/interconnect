@@ -24,7 +24,7 @@ enum TASK_STATE {
     DONE
 };
 
-const uint64_t CHUNK_DIVISION = 10;
+const uint64_t CHUNK_DIVISION = 100;
 uint64_t chunks_left = CHUNK_DIVISION;
 
 uint64_t leap = 0;
@@ -38,6 +38,7 @@ uint64_t M;
 std::vector<uint64_t> res;
 std::vector<std::vector<uint64_t>> total_res;
 std::unordered_map<std::string, uint64_t> comps;
+std::unordered_map<std::string, uint64_t> awaiting;
 std::vector<std::string> ips_previously_connected;
 
 class Timer
@@ -123,14 +124,14 @@ public:
                         std::to_string(endR) + ' ' +
                         std::to_string(M) + '!';
         }
+        awaiting[ip] = M / CHUNK_DIVISION * comps[ip];
         leap += comps[ip];
         chunks_left -= comps[ip];
         std::cout << "CHUNKS LEFT: " << chunks_left << '\n';
     }
 
     void read_result(std::string& ip){
-        uint64_t reserved = (last_batch ? reserved_last : 
-                    M / CHUNK_DIVISION * comps[ip]);
+        uint64_t reserved = awaiting[ip];
         
         std::vector<uint64_t> slave_res(reserved);
         boost::system::error_code error;
@@ -139,11 +140,13 @@ public:
         size_t n = boost::asio::read(socket(), boost::asio::buffer(slave_res),
                                         boost::asio::transfer_exactly(reserved * 8), error);
         std::cout << "ACCEPTED " << slave_res.size() << '\n';
+        awaiting.erase(ip);
         total_res.push_back(slave_res);
         uint64_t curr_res = 0;
         for(auto& i : total_res){
             curr_res += i.size();
         }
+        std::cout << "CURRENTLY: " << curr_res << '\n';
         if (curr_res == M){
             curr_state = DONE;
             write_end();
@@ -157,9 +160,10 @@ public:
             uint64_t prev_startR = 0;
             if (chunks_left <= comps[ip]){
                 std::cout << "LAST_BATCH FLAG SET" << '\n';
-                prev_startR = (leap - comps[ip]) * chunk_size;
+                prev_startR = leap * chunk_size;
                 chunk_size = chunks_left * chunk_size / comps[ip];
-                reserved_last = chunk_size * comps[ip] + M % CHUNK_DIVISION;
+                reserved_last = chunk_size * comps[ip] + 
+                                (M - prev_startR) % chunk_size;
                 std::cout << "RESERVED LAST: " << reserved_last << '\n';
                 last_batch = true;
                 curr_state = AWAIT_ONLY;
@@ -171,15 +175,27 @@ public:
             }
             std::cout << "GENERATING MESSAGE" << '\n';
             for(size_t th = 0; th < comps[ip]; th++){
-                uint64_t startR = (th + leap) * chunk_size + prev_startR;
-                uint64_t endR   = (th + leap + 1) * chunk_size + prev_startR;
-                if (last_batch && th == comps[ip] - 1){
-                    endR += M % CHUNK_DIVISION;
-                }
-                message_ += std::to_string(startR) + ' ' + 
+                if (last_batch) {
+                    uint64_t startR = (th) * chunk_size + prev_startR;
+                    uint64_t endR   = (th + 1) * chunk_size + prev_startR;
+                    if (th == comps[ip] - 1) {
+                        endR += (M - prev_startR) % chunk_size;
+                    }
+
+                    message_ += std::to_string(startR) + ' ' + 
                             std::to_string(endR) + ' ' +
                             std::to_string(M) + '!';
+
+                } else {
+                    uint64_t startR = (th + leap) * chunk_size ;
+                    uint64_t endR   = (th + leap + 1) * chunk_size ;
+                    message_ += std::to_string(startR) + ' ' + 
+                            std::to_string(endR) + ' ' +
+                            std::to_string(M) + '!';
+                }
             }
+            awaiting[ip] = (last_batch ? reserved_last : 
+                    M / CHUNK_DIVISION * comps[ip]);
             leap += comps[ip];
             std::cout << "LEAP: " << leap << '\n';
             chunks_left -= comps[ip];
@@ -320,10 +336,12 @@ void launch(){
 
 
 int main() {
+    
     std::cout << "MATRIX DIMENSIONS: ";
     std::cin >> M;
     chunk_size = M / CHUNK_DIVISION;
 
+    Timer t;
     std::thread control(launch);
 
     uint64_t total_threads = SELF_CORES;
@@ -331,10 +349,11 @@ int main() {
         total_threads += cores;
     }
     control.join();
+    std::cout << t.elapsed() << '\n';
 
-    for(auto& i : total_res){
-        for(auto& j : i){
-            std::cout << j << ' ';
-        }
-    }
+    // for(auto& i : total_res){
+    //     for(auto& j : i){
+    //         std::cout << j << ' ';
+    //     }
+    // }
 }
