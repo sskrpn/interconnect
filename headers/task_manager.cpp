@@ -1,29 +1,25 @@
 #include "task_manager.hpp"
-#include "tcp_connection.hpp"
-#include "tcp_server.hpp"
-#include <iostream>
-#include <boost/asio.hpp>
 
 using boost::asio::ip::tcp;
 
 extern uint64_t counter;
 
-task_manager::task_manager(uint64_t& matrix_size, uint64_t chunk_div = 100)
+task_manager::task_manager(uint64_t& matrix_size, uint64_t chunk_div = 100, uint16_t port = 52524)
                             : M(matrix_size),
                               CHUNK_DIVIDER(chunk_div),
-                              chunks_left(chunk_div) {
+                              chunks_left(chunk_div),
+                              port(port) {
     chunk_size = M / CHUNK_DIVIDER;
 }
 
 void task_manager::start() {
     try {
-        boost::asio::io_context io_context;
-        tcp_server server(io_context, shared_from_this());
+        auto server = std::make_shared<tcp_server>(io_ctx, shared_from_this(), port);
         state = EXECUTING;
 
         std::cout << "[task_manager] ";
         std::cout << "TASK MANAGER STARTED" << '\n';
-        io_context.run();
+        io_ctx.run();
     } catch (std::exception& e) {
         std::cerr << "[task_manager] ";
         std::cerr << "EXCEPTION ON START: " << e.what() << '\n';
@@ -36,21 +32,19 @@ void task_manager::add_connection(std::shared_ptr<tcp_connection> connection) {
     counter++;
 }
 
-void task_manager::add_comp(uint64_t& id) {
-    auto pointer = connections[id];
-    uint64_t threads = pointer->get_threads();
-    comps[id] = threads;
-    std::cout << "[task_manager] ";
-    std::cout << "COMP ADDED" << '\n';
-}
-
 void task_manager::generate_response(uint64_t& id) {
-    auto pointer = connections[id];
+    auto pointer = connections[id].lock();
+    if (!pointer) {
+        std::cerr << "[task_manager] ";
+        std::cerr << "FAILED TO GENERATE RESPONSE: CONNECTION EXPIRED" << '\n';
+        return;
+    }
     uint64_t threads = pointer->get_threads();
     std::string message;
 
     if ((state == COMPLETED) || (state == AWAIT_ONLY)) {
         message = "end";
+        pointer->set_message(message);
         return;
     }
 
@@ -126,9 +120,26 @@ void task_manager::record_results(std::vector<uint64_t>& results) {
         state = COMPLETED;
         std::cout << "[task_manager] ";
         std::cout << "ALL RESULTS RECEIVED" << '\n';
+        terminate();
         return;
     }
 }
 
-void terminate() {
+void task_manager::terminate() {
+    std::cout << "[task_manager] ";
+    std::cout << "TERMINATING TASK MANAGER" << '\n';
+    server->stop_accept();
+
+    for(auto& [id, conn] : connections) {
+        auto conn_ptr = conn.lock();
+        if (conn_ptr) {
+            boost::system::error_code ec;
+            conn_ptr->socket().shutdown(tcp::socket::shutdown_both, ec);
+            conn_ptr->socket().close(ec);
+        }
+    }
+
+    io_ctx.stop();
+    std::cout << "[task_manager] ";
+    std::cout << "TASK MANAGER TERMINATED" << '\n';
 }

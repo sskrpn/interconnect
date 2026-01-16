@@ -1,3 +1,5 @@
+#include "headers/task_manager.hpp"
+#include "headers/tcp_server.hpp"
 #include <boost/asio.hpp>
 #include <chrono>
 #include <cstdint>
@@ -9,8 +11,6 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include "headers/task_manager.hpp"
-#include "headers/tcp_server.hpp"
 
 #define SERVER_PORT 52524
 
@@ -39,33 +39,6 @@ class Timer {
     }
 };
 
-tcp_server::tcp_server(boost::asio::io_context& io_context,
-                        std::shared_ptr<task_manager> manager)
-                        : acceptor_(io_context,
-                          tcp::endpoint(tcp::v4(), SERVER_PORT)),
-                          manager_(manager) {
-        start_accept();
-}
-
-void tcp_server::start_accept() {
-    acceptor_.async_accept(
-        [this](boost::system::error_code ec, tcp::socket socket) {
-            if (!ec) {
-                std::shared_ptr<tcp_connection> connection =
-                    tcp_connection::create(std::move(socket), manager_);
-                manager_->add_connection(connection);
-                connection->start();
-                std::cout << "[tcp_server] ";
-                std::cout << "NEW CONNECTION ACCEPTED" << '\n';
-            } else {
-                std::cerr << "[tcp_server] ";
-                std::cerr << "ACCEPT FAILED: " << ec.message() << '\n';
-            }
-
-            start_accept();
-        });
-}
-
 int main() {
     uint64_t M;
     uint64_t div;
@@ -79,7 +52,7 @@ int main() {
 
     std::cout << "[main] ";
     std::cout << "STARTING TASK MANAGER" << '\n';
-    auto manager = std::make_shared<task_manager>(M, div);
+    auto manager = std::make_shared<task_manager>(M, div, SERVER_PORT);
     manager->start();
 
     for (auto& i : final_res) {

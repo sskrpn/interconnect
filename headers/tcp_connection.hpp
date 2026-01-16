@@ -1,6 +1,12 @@
 #pragma once
 
-#include "task_manager.hpp"
+#ifndef TCP_CONNECTION_HPP
+#define TCP_CONNECTION_HPP
+
+#include <iostream>
+#include <cstdint>
+#include <string>
+#include <memory>
 #include <boost/asio.hpp>
 
 using boost::asio::ip::tcp;
@@ -35,7 +41,7 @@ class tcp_connection : public std::enable_shared_from_this<tcp_connection> {
     uint64_t    id_;
     std::string message_;
     bool first_connect = true;
-    std::shared_ptr<task_manager> manager_;
+    std::weak_ptr<task_manager> manager_;
 
     tcp_connection(boost::asio::io_context& io_context,
                    std::shared_ptr<task_manager> manager);
@@ -48,3 +54,5 @@ class tcp_connection : public std::enable_shared_from_this<tcp_connection> {
     void read_threads();
     void read_results();
 };
+
+#endif  // TCP_CONNECTION_HPP

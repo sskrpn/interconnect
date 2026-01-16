@@ -40,7 +40,13 @@ void tcp_connection::do_read() {
 }
 
 void tcp_connection::respond() {
-    manager_->generate_response(id_);
+    auto manager_ptr = manager_.lock();
+    if (!manager_ptr) {
+        std::cerr << "[tcp_connection] ";
+        std::cerr << "MANAGER DEAD (on respond)" << '\n';
+        return;
+    }
+    manager_ptr->generate_response(id_);
     message_ += '\n';
     boost::system::error_code error;
 
@@ -64,15 +70,19 @@ void tcp_connection::read_threads() {
     std::string cores_str;
     boost::asio::read_until(socket(), boost::asio::dynamic_buffer(cores_str), '\n');
     threads_ = std::stoull(cores_str);
-    manager_->add_comp(id_);
-
     std::cout << "[tcp_connection] ";
     std::cout << "CORES READ ";
     std::cout << threads_ << '\n';
 }
 
 void tcp_connection::read_results() {
-    uint64_t reserved = manager_->get_reserved(id_);
+    auto manager_ptr = manager_.lock();
+    if (!manager_ptr) {
+        std::cerr << "[tcp_connection] ";
+        std::cerr << "MANAGER DEAD (on result read)" << '\n';
+        return;
+    }
+    uint64_t reserved = manager_ptr->get_reserved(id_);
 
     std::vector<uint64_t> slave_res(reserved);
     boost::system::error_code error;
@@ -88,7 +98,7 @@ void tcp_connection::read_results() {
         std::cout << "[tcp_connection] ";
         std::cout << "ACCEPTED: " << slave_res.size() << " RESULTS" << '\n';
 
-        manager_->complete_awaiting(id_);
-        manager_->record_results(slave_res);
+        manager_ptr->complete_awaiting(id_);
+        manager_ptr->record_results(slave_res);
     }
 }
