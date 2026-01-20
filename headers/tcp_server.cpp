@@ -18,9 +18,9 @@ void tcp_server::start_accept() {
                 std::shared_ptr<tcp_connection> connection =
                     tcp_connection::create(std::move(socket), manager_);
                 manager_->add_connection(connection);
-                connection->start();
                 std::cout << "[tcp_server] ";
                 std::cout << "NEW CONNECTION ACCEPTED" << '\n';
+                connection->start();
             } else {
                 std::cerr << "[tcp_server] ";
                 std::cerr << "ACCEPT FAILED: " << ec.message() << '\n';
