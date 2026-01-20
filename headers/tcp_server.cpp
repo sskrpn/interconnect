@@ -15,8 +15,8 @@ void tcp_server::start_accept() {
     acceptor_.async_accept(
         [this](boost::system::error_code ec, tcp::socket socket) {
             if (!ec) {
-                std::shared_ptr<tcp_connection> connection =
-                    tcp_connection::create(std::move(socket), manager_);
+                std::shared_ptr<master_connection> connection =
+                    master_connection::create(std::move(socket), manager_);
                 manager_->add_connection(connection);
                 std::cout << "[tcp_server] ";
                 std::cout << "NEW CONNECTION ACCEPTED" << '\n';

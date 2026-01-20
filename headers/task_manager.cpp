@@ -26,7 +26,7 @@ void task_manager::start() {
     }
 }
 
-void task_manager::add_connection(std::shared_ptr<tcp_connection> connection) {
+void task_manager::add_connection(std::shared_ptr<master_connection> connection) {
     connection->set_id(counter);
     connections[counter] = connection;
     counter++;

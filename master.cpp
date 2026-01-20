@@ -20,8 +20,6 @@ std::mutex mtx;
 uint64_t counter = 1;
 std::vector<std::vector<uint64_t>> final_res;
 
-class task_manager;
-
 class Timer {
    private:
     using Clock = std::chrono::steady_clock;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tcp_connectionv2.hpp"
+#include "tcp_connection.hpp"
 
 using boost::asio::ip::tcp;
 
@@ -17,15 +17,17 @@ public:
     uint64_t     get_id()                 const;
     std::string& get_message()         override;
     void set_message(std::string& msg) override;
-    void set_id();
+    tcp::socket& socket()              override;
+    void set_id(uint64_t& id);
 
 protected:
+    std::weak_ptr<task_manager> manager_;
     uint64_t    id_;
 
     master_connection(tcp::socket&& socket,
                       std::shared_ptr<task_manager> task_manager);
     void do_read()      override;
     void respond()      override;
-    void read_threads() override;
-    void read_results() override;
+    void read_results();
+    void read_threads();
 };
