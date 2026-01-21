@@ -36,7 +36,7 @@ void master_connection::respond() {
         return;
     }
     manager_ptr->generate_response(id_);
-    message_ += '\n';
+    //message_ += '\n';
     boost::system::error_code error;
 
     std::cout << "[tcp_connection] ";
@@ -48,7 +48,7 @@ void master_connection::respond() {
         std::cerr << "WRITE FAILED: " << error.message() << '\n';
     } else {
         std::cout << "[tcp_connection] ";
-        std::cout << "SENT TASK:\n"
+        std::cout << "SENT TASK: "
                   << message_;
         message_.clear();
         do_read();
@@ -72,8 +72,10 @@ void master_connection::read_results() {
         return;
     }
     uint64_t reserved = manager_ptr->get_reserved(id_);
+    std::cerr << "[tcp_connection] ";
+    std::cerr << "RESERVED " << reserved << '\n';
 
-    std::vector<uint64_t> slave_res(reserved);
+    std::vector<uint64_t> slave_res;
     boost::system::error_code error;
 
     std::cout << "[tcp_connection] ";

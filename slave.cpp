@@ -68,5 +68,4 @@ int main() {
     );
 
     con->start();
-    io_context.run();
 }

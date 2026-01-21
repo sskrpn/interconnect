@@ -43,7 +43,7 @@ void task_manager::generate_response(uint64_t& id) {
     std::string message;
 
     if ((state == COMPLETED) || (state == AWAIT_ONLY)) {
-        message = "end";
+        message = "end\n";
         pointer->set_message(message);
         return;
     }
@@ -92,6 +92,7 @@ void task_manager::generate_response(uint64_t& id) {
                        std::to_string(M) + '!';
         }
     }
+    message += '\n';
     pointer->set_message(message);
 
     awaiting[id] = (state == AWAIT_ONLY) ? reserved_last : (chunk_size * threads);
