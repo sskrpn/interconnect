@@ -1,27 +1,34 @@
-cmake_minimum_required(VERSION 4.2)
+cmake_minimum_required(VERSION 3.20)
+project(interconnect LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost 1.70 REQUIRED CONFIG)
+find_package(Threads REQUIRED)
 
-file(GLOB SOURCES "master.cpp" "slavev2.cpp")
-
-foreach(SOURCE_PATH ${SOURCES})
-if(SOURCE_PATH MATCHES "master.cpp")
-    get_filename_component(EXECUTABLE_NAME ${SOURCE_PATH} NAME_WE)
+if(UNIX AND NOT APPLE)
     add_executable(master
-        ${SOURCE_PATH}
-        headers/task_manager.cpp
-        headers/tcp_connection_master.cpp
-        headers/tcp_server.cpp
+        src/main/master.cpp
+        src/task_manager.cpp
+        src/tcp_connection_master.cpp
     )
-    target_link_libraries(${EXECUTABLE_NAME} Boost::system pthread)
-elseif(SOURCE_PATH MATCHES "slavev2.cpp")
-    get_filename_component(slave ${SOURCE_PATH} NAME_WE)
-    add_executable(slave
-        ${SOURCE_PATH}
-        headers/tcp_connection_slave.cpp
+    target_include_directories(master PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/headers
     )
-    target_link_libraries(slave Boost::system pthread)
+    target_link_libraries(master PRIVATE Boost::headers Threads::Threads)
+else()
+    message(STATUS "Skipping 'master' build: master uses Linux-only syscalls (mmap/fstat/open).")
 endif()
-endforeach(SOURCE_PATH ${SOURCES})
+
+add_executable(slave
+    src/main/slave.cpp
+    src/tcp_connection_slave.cpp
+)
+target_include_directories(slave PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/headers
+)
+target_link_libraries(slave PRIVATE Boost::headers Threads::Threads)

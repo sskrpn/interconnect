@@ -1,34 +1,27 @@
 #pragma once
 
-#include <iostream>
-#include <cstdint>
-#include <string>
-#include <memory>
 #include <boost/asio.hpp>
+
+#include <cstdint>
+#include <memory>
+#include <string>
 
 using boost::asio::ip::tcp;
 
 class task_manager;
 
-class tcp_connection{
-public:
-    virtual void start() = 0;
+class tcp_connection {
+   public:
     virtual ~tcp_connection() = default;
+    virtual void start() = 0;
 
-    virtual void set_message(std::string& msg) = 0;
     virtual uint64_t get_threads() const = 0;
-    virtual std::string& get_message() = 0;
     virtual tcp::socket& socket() = 0;
 
-protected:
+   protected:
+    explicit tcp_connection(tcp::socket&& socket, uint64_t threads = 0)
+        : socket_(std::move(socket)), threads_(threads) {}
+
     tcp::socket socket_;
-    uint64_t threads_;
-    std::string message_;
-    bool first_connect = true;
-
-    tcp_connection(tcp::socket&& socket, uint64_t threads = 0)
-                   : socket_(std::move(socket)), threads_(threads) {}
-
-    virtual void do_read() = 0;
-    virtual void respond() = 0;
+    uint64_t threads_ = 0;
 };

@@ -5,3 +5,13 @@ Makefile
 build/
 slave_rewrite.cpp
 *
+!/.gitignore
+!/CMakeLists.txt
+!/README.md
+!/generator.cpp
+!/headers/
+!/headers/*.hpp
+!/src/
+!/src/*.cpp
+!/src/main/
+!/src/main/*.cpp
