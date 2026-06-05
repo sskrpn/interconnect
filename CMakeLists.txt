@@ -20,7 +20,7 @@ if(UNIX AND NOT APPLE)
     )
     target_link_libraries(master PRIVATE Boost::headers Threads::Threads)
 else()
-    message(STATUS "Skipping 'master' build: master uses Linux-only syscalls (mmap/fstat/open).")
+    message(STATUS "Skipping 'master' build: master is Linux-only.")
 endif()
 
 add_executable(slave
